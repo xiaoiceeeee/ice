@@ -1,0 +1,11 @@
+{
+  "display_name": "批量导出角色卡",
+  "loading_order": 10,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "",
+  "author": "batch-export",
+  "version": "1.0.0",
+  "homePage": ""
+}
