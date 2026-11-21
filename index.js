@@ -1,4 +1,4 @@
-// 批量导出角色卡（PNG）- 导出选中 / 导出全部，逐张下载 PNG
+// 批量导出角色卡（PNG）- 选中多个角色，一键逐张下载 PNG
 (function () {
   async function getST() {
     if (window.SillyTavern && typeof SillyTavern.getContext === 'function') {
@@ -67,42 +67,6 @@
     setTimeout(() => URL.revokeObjectURL(url), 30000);
   }
 
-  // 逐个下载传入的角色
-  async function downloadMany(chars, getRequestHeaders) {
-    const used = new Set();
-    const reasons = [];
-    let ok = 0;
-    toastr.info(`开始导出 ${chars.length} 个角色。如果浏览器询问是否允许下载多个文件，请点"允许"`, '', { timeOut: 8000 });
-
-    for (let i = 0; i < chars.length; i++) {
-      const c = chars[i];
-      try {
-        const data = await fetchCard(c, getRequestHeaders);
-        const base = safeName(c.name);
-        let name = `${base}.png`;
-        let n = 2;
-        while (used.has(name.toLowerCase())) name = `${base}_${n++}.png`;
-        used.add(name.toLowerCase());
-        saveFile(name, data);
-        ok++;
-        await sleep(800);
-      } catch (e) {
-        console.error('[批量导出] 失败：', c.name, e);
-        reasons.push(`${c.name}：${e.message}`);
-      }
-      if (chars.length > 10 && (i + 1) % 10 === 0) {
-        toastr.info(`进度 ${i + 1}/${chars.length}`);
-      }
-    }
-
-    if (!ok) {
-      toastr.error('全部导出失败。原因：' + reasons[0], '', { timeOut: 20000 });
-      return;
-    }
-    toastr.success(`导出完成：成功 ${ok} 张` + (reasons.length ? `，失败 ${reasons.length} 张` : ''), '', { timeOut: 10000 });
-  }
-
-  // 导出选中的角色
   async function exportSelected() {
     if (busy) return;
     const picked = [];
@@ -122,40 +86,39 @@
     busy = true;
     try {
       const { characters, getRequestHeaders } = await getST();
-      const chars = [];
-      for (const p of picked) {
-        let c = characters[p.id];
-        if (!c && p.name) c = characters.find(x => x.name === p.name);
-        if (c && c.avatar) chars.push(c);
-      }
-      if (!chars.length) {
-        toastr.error('找不到所选角色的数据');
-        return;
-      }
-      await downloadMany(chars, getRequestHeaders);
-    } catch (e) {
-      console.error('[批量导出]', e);
-      toastr.error('导出出错：' + e.message, '', { timeOut: 20000 });
-    } finally {
-      busy = false;
-    }
-  }
+      const used = new Set();
+      const reasons = [];
+      let ok = 0;
+      toastr.info(`开始导出 ${picked.length} 个角色。如果浏览器询问是否允许下载多个文件，请点"允许"`, '', { timeOut: 8000 });
 
-  // 导出全部角色（不受分页、勾选影响）
-  async function exportAll() {
-    if (busy) return;
-    busy = true;
-    try {
-      const { characters, getRequestHeaders } = await getST();
-      const chars = characters.filter(c => c && c.avatar);
-      if (!chars.length) {
-        toastr.warning('没有可导出的角色');
+      for (let i = 0; i < picked.length; i++) {
+        let c = characters[picked[i].id];
+        if (!c && picked[i].name) c = characters.find(x => x.name === picked[i].name);
+        if (!c) {
+          reasons.push(`找不到角色数据(chid=${picked[i].id})`);
+          continue;
+        }
+        try {
+          const data = await fetchCard(c, getRequestHeaders);
+          const base = safeName(c.name);
+          let name = `${base}.png`;
+          let n = 2;
+          while (used.has(name.toLowerCase())) name = `${base}_${n++}.png`;
+          used.add(name.toLowerCase());
+          saveFile(name, data);
+          ok++;
+          await sleep(800);
+        } catch (e) {
+          console.error('[批量导出] 失败：', c.name, e);
+          reasons.push(`${c.name}：${e.message}`);
+        }
+      }
+
+      if (!ok) {
+        toastr.error('全部导出失败。原因：' + reasons[0], '', { timeOut: 20000 });
         return;
       }
-      if (!confirm(`将逐张下载全部 ${chars.length} 个角色卡（PNG），大约需要 ${Math.ceil(chars.length * 0.9 / 60)} 分钟，期间请不要关闭页面。确定开始吗？`)) {
-        return;
-      }
-      await downloadMany(chars, getRequestHeaders);
+      toastr.success(`导出完成：成功 ${ok} 张` + (reasons.length ? `，失败 ${reasons.length} 张` : ''));
     } catch (e) {
       console.error('[批量导出]', e);
       toastr.error('导出出错：' + e.message, '', { timeOut: 20000 });
@@ -168,25 +131,20 @@
     if ($('#batch_export_btn').length) return true;
     const anchor = $('#bulkDeleteButton');
     if (!anchor.length) return false;
-    const btn1 = $(
+    const btn = $(
       '<div id="batch_export_btn" class="menu_button menu_button_icon" title="导出选中的角色卡(PNG)">' +
       '<i class="fa-solid fa-file-export"></i><span>导出选中</span></div>'
     ).on('click', exportSelected);
-    const btn2 = $(
-      '<div id="batch_export_all_btn" class="menu_button menu_button_icon" title="导出全部角色卡(PNG)">' +
-      '<i class="fa-solid fa-boxes-packing"></i><span>导出全部</span></div>'
-    ).on('click', exportAll);
-    anchor.after(btn1);
-    btn1.after(btn2);
+    anchor.after(btn);
     return true;
   }
 
   function addFloatingFallback() {
     if ($('#batch_export_btn').length) return;
-    const box = $('<div id="batch_export_btn" style="position:fixed;right:12px;bottom:80px;z-index:9999;display:flex;flex-direction:column;gap:6px;"></div>');
-    box.append($('<div class="menu_button">导出选中</div>').on('click', exportSelected));
-    box.append($('<div class="menu_button">导出全部</div>').on('click', exportAll));
-    $('body').append(box);
+    const btn = $(
+      '<div id="batch_export_btn" class="menu_button" style="position:fixed;right:12px;bottom:80px;z-index:9999;">导出选中</div>'
+    ).on('click', exportSelected);
+    $('body').append(btn);
   }
 
   jQuery(() => {
